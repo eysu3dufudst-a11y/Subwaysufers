@@ -164,7 +164,7 @@
     camera.lookAt(0, 2, -10);
 
     var obstacles = [];
-    var gameSpeed = 0.7;
+    var gameSpeed = 999;
     var isGameOver = false;
 
     // 장애물 생성
