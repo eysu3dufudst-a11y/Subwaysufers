@@ -1,33 +1,275 @@
 <!DOCTYPE html>
-<html>
+<html lang="ko">
 <head>
-    <meta charset="utf-8"/>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
-    <title>3D Subway Runner</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Roblox Baseplate - Mobile Edition</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        html, body {
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #a0c4ff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+        }
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            display: block;
+        }
+        /* 상단 우측 리더보드 */
+        #leaderboard {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.5);
+            color: white;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-weight: bold;
+            font-size: 13px;
+            z-index: 10;
+        }
+        /* 하단 좌측 체력바 */
+        #gui-container {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            z-index: 10;
+        }
+        .health-bar-bg {
+            width: 120px;
+            height: 10px;
+            background: rgba(50, 50, 50, 0.8);
+            border: 1.5px solid #ffffff;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        .health-bar-fill {
             width: 100%;
             height: 100%;
-            background-color: #000;
-            overflow: hidden;
-            display: flex;
-            justify-content: center;
-            align-items: center;
+            background: #00e676;
         }
-        canvas {
-            display: block;
-            max-width: 100vw;
-            max-height: 100vh;
+        /* 모바일 UI 가상 패드 */
+        #joystick-zone {
+            position: absolute;
+            bottom: 40px;
+            left: 40px;
+            width: 100px;
+            height: 100px;
+            background: rgba(255, 255, 255, 0.2);
+            border: 2px solid rgba(255, 255, 255, 0.4);
             border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10;
+        }
+        #joystick-stick {
+            width: 40px;
+            height: 40px;
+            background: rgba(255, 255, 255, 0.7);
+            border-radius: 50%;
+            position: absolute;
+        }
+        #jump-button {
+            position: absolute;
+            bottom: 50px;
+            right: 40px;
+            width: 70px;
+            height: 70px;
+            background: rgba(255, 255, 255, 0.4);
+            border: 2px solid rgba(255, 255, 255, 0.6);
+            border-radius: 50%;
+            color: white;
+            font-weight: bold;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+        }
+        #jump-button:active {
+            background: rgba(255, 255, 255, 0.7);
         }
     </style>
-    <!-- 호환성 보장용 Three.js & OBJLoader -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
+    <!-- Three.js 라이브러리 -->
+    <script src="https://cloudflare.com"></script>
 </head>
 <body>
-    <script src="app.js"></script>
-</body>
-</html>
 
+    <div id="canvas-container"></div>
+    
+    <div id="leaderboard">Players: Player1</div>
+    
+    <div id="gui-container">
+        <div style="color: white; font-size: 11px; text-shadow: 1px 1px 2px black;">Health</div>
+        <div class="health-bar-bg">
+            <div id="health-fill" class="health-bar-fill"></div>
+        </div>
+    </div>
+
+    <!-- 가상 조이스틱 영역 -->
+    <div id="joystick-zone">
+        <div id="joystick-stick"></div>
+    </div>
+
+    <!-- 가상 점프 버튼 -->
+    <div id="jump-button">JUMP</div>
+
+    <script>
+        // --- 게임 설정 ---
+        const MOVE_SPEED = 0.12;
+        const JUMP_FORCE = 0.20;
+        const GRAVITY = 0.01;
+
+        // --- 씬 셋업 ---
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x8ecae6); 
+        
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        container.appendChild(renderer.domElement);
+
+        // --- 조명 ---
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+        const sunLight = new THREE.DirectionalLight(0xffffff, 0.7);
+        sunLight.position.set(30, 60, 30);
+        sunLight.castShadow = true;
+        scene.add(sunLight);
+
+        // --- 클래식 베이스플레이트 ---
+        const baseplateGeo = new THREE.BoxGeometry(80, 4, 80);
+        const baseplateMat = new THREE.MeshStandardMaterial({ color: 0x3a5f43, roughness: 0.9 });
+        const baseplate = new THREE.Mesh(baseplateGeo, baseplateMat);
+        baseplate.position.y = -2;
+        baseplate.receiveShadow = true;
+        scene.add(baseplate);
+
+        const gridHelper = new THREE.GridHelper(80, 40, 0x222222, 0x444444);
+        gridHelper.position.y = 0.01;
+        scene.add(gridHelper);
+
+        // 스폰 패드
+        const spawnGeo = new THREE.CylinderGeometry(3, 3, 0.4, 32);
+        const spawnMat = new THREE.MeshStandardMaterial({ color: 0xdd2c00 });
+        const spawnPad = new THREE.Mesh(spawnGeo, spawnMat);
+        spawnPad.position.set(0, 0.2, 0);
+        scene.add(spawnPad);
+
+        // --- 아바타 (노브 캐릭터) ---
+        const character = new THREE.Group();
+        const torso = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.8, 0.8), new THREE.MeshStandardMaterial({ color: 0x0053a6 }));
+        torso.position.y = 1.9;
+        character.add(torso);
+        const head = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), new THREE.MeshStandardMaterial({ color: 0xffd200 }));
+        head.position.y = 3.3;
+        character.add(head);
+        const leftArm = new THREE.Mesh(new THREE.BoxGeometry(0.6, 1.8, 0.8), new THREE.MeshStandardMaterial({ color: 0xffd200 }));
+        leftArm.position.set(-1.05, 1.9, 0);
+        character.add(leftArm);
+        const rightArm = new THREE.Mesh(new THREE.BoxGeometry(0.6, 1.8, 0.8), new THREE.MeshStandardMaterial({ color: 0xffd200 }));
+        rightArm.position.set(1.05, 1.9, 0);
+        character.add(rightArm);
+        const legs = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.8, 0.8), new THREE.MeshStandardMaterial({ color: 0xa34b1f }));
+        legs.position.y = 0.9;
+        character.add(legs);
+
+        character.position.set(0, 0, 0);
+        scene.add(character);
+
+        // --- 컨트롤 상태 및 변수 ---
+        let cameraRotation = { yaw: 0, pitch: -0.2 };
+        let playerVelocityY = 0;
+        let isGrounded = true;
+
+        // 가상 조이스틱 입력 값
+        let joystickInput = { x: 0, y: 0 };
+        let joystickActive = false;
+
+        // --- 모바일 조이스틱 로직 ---
+        const joystickZone = document.getElementById('joystick-zone');
+        const joystickStick = document.getElementById('joystick-stick');
+        let joystickRect = joystickZone.getBoundingClientRect();
+
+        window.addEventListener('resize', () => {
+            joystickRect = joystickZone.getBoundingClientRect();
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        function handleJoystickStart(e) {
+            joystickActive = true;
+            handleJoystickMove(e);
+        }
+
+        function handleJoystickMove(e) {
+            if (!joystickActive) return;
+            const touch = e.touches ? e.touches[0] : e;
+            const centerX = joystickRect.left + joystickRect.width / 2;
+            const centerY = joystickRect.top + joystickRect.height / 2;
+            
+            let deltaX = touch.clientX - centerX;
+            let deltaY = touch.clientY - centerY;
+            const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+            const maxRadius = joystickRect.width / 2;
+
+            if (distance > maxRadius) {
+                deltaX = (deltaX / distance) * maxRadius;
+                deltaY = (deltaY / distance) * maxRadius;
+            }
+
+            joystickStick.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
+            
+            // 값을 -1 ~ 1 사이로 정규화
+            joystickInput.x = deltaX / maxRadius;
+            joystickInput.y = deltaY / maxRadius;
+        }
+
+        function handleJoystickEnd() {
+            joystickActive = false;
+            joystickStick.style.transform = 'translate(0px, 0px)';
+            joystickInput.x = 0;
+            joystickInput.y = 0;
+        }
+
+        // 터치 및 마우스 이벤트 바인딩 (하이브리드 지원)
+        joystickZone.addEventListener('touchstart', handleJoystickStart, {passive: false});
+        window.addEventListener('touchmove', handleJoystickMove, {passive: false});
+        window.addEventListener('touchend', handleJoystickEnd);
+
+        joystickZone.addEventListener('mousedown', handleJoystickStart);
+        window.addEventListener('mousemove', handleJoystickMove);
+        window.addEventListener('mouseup', handleJoystickEnd);
+
+        // 점프 버튼 터치
+        const jumpBtn = document.getElementById('jump-button');
+        const triggerJump = () => { if (isGrounded) { playerVelocityY = JUMP_FORCE; isGrounded = false; } };
+        jumpBtn.addEventListener('touchstart', (e) => { e.preventDefault(); triggerJump(); });
+        jumpBtn.addEventListener('mousedown', triggerJump);
+
+        // 화면 드래그로 카메라 뷰 회전 (조이스틱 영역 제외 화면 터치 리스너)
+        let lastTouchX = 0, lastTouchY = 0;
+        let isCamMoving = false;
+
+        window.addEventListener('touchstart', (e) => {
+            if(e.touches[0].clientX > joystickRect.right || e.touches[0].clientY < joystickRect.top) {
+                isCamMoving = true;
+                lastTouchX = e.touches[0].clientX;
+                lastTouchY = e.touches[0].clientY;
+            }
+        }, {passive: true});
+
+        window.addEventListener('touchmove', (e) => {
